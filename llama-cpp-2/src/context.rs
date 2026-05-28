@@ -92,6 +92,26 @@ impl<'model> LlamaContext<'model> {
             Some(error) => Err(DecodeError::from(error)),
         }
     }
+    
+    /// Wait for all asynchronous GPU work on this context to complete.
+    ///
+    /// `llama_decode` returns before the GPU has finished — logits are
+    /// copied to the output buffer asynchronously. On well-behaved drivers
+    /// (CUDA, Metal, desktop Vulkan) the next API call implicitly waits.
+    /// On Mali Vulkan and some other mobile drivers, calling
+    /// `get_logits_ith` immediately after `decode` can read from a buffer
+    /// that has not been fully written yet, producing NaN-filled logits
+    /// and degenerate sampler output.
+    ///
+    /// Calling this method between `decode` and reading logits forces the
+    /// CPU to wait until the GPU is fully done. On well-behaved drivers
+    /// the wait is essentially a no-op (work already finished). On Mali
+    /// it adds whatever real time was missing from the implicit wait.
+    pub fn synchronize(&self) {
+        unsafe {
+            llama_cpp_sys_2::llama_synchronize(self.context.as_ptr());
+        }
+    }
 
     /// Encodes the batch.
     ///
